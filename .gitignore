@@ -1,0 +1,10 @@
+# The release zips are committed on purpose — the app downloads them from the raw URL,
+# so they have to be in the repository. Nothing else generated belongs here.
+
+# A local test server's scratch space, and the manifests it serves.
+/tmp/
+*.log
+
+# The build output the release script stages into before zipping. The zip is committed;
+# the folder it was made from is not.
+/build/

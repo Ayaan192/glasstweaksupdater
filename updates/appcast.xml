@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The update manifest Glass Tweaks reads on launch. It lives in `updates/` together
+  with the release zips it names, so everything published sits in one folder.
+
+  This file is the only thing the app fetches to find out whether there is anything
+  new. It is served raw from the `main` branch, so no release API and no token is
+  involved:
+
+      https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/appcast.xml
+
+  release.ps1 writes this file, so the normal way to change it is to run that script
+  rather than to edit it by hand.
+
+  It is set to 0.2.0.0, which is the version the app is on, so a copy of the app sees
+  nothing to do. Raising the version and publishing is what gives it something to do:
+
+      1. bump <Version> in windows/app/GlassTweaks.csproj, e.g. to 0.3.0
+      2. run ./release.ps1   (it reads the version from that project file)
+      3. commit and push updates/appcast.xml and updates/GlassTweaks-0.3.0.zip
+
+  The rules, all of them from AutoUpdater.NET:
+
+    version   Required. The newest published version, in X.X.X.X form. It is compared
+              against the assembly version of the running app, so it must be strictly
+              higher than that for anything to happen.
+    url       Required. The release zip. The app downloads this file itself.
+    changelog Optional. A page to read about the release.
+    mandatory The mode attribute is what makes the update run itself:
+                mode="0"  show the update dialog with buttons
+                mode="1"  show it without a Close button
+                mode="2"  no dialog at all: download and apply on the spot
+              mode="2" is what Glass Tweaks uses, because the update is meant to need no
+              clicks. The app also sets this in code, so an older manifest cannot quietly
+              turn the buttons back on.
+    checksum  Optional, and honoured. The zip is hashed before it is unpacked, so a
+              truncated or altered download is refused rather than applied.
+
+  The zip must contain GlassTweaks.exe at its root, because it is unpacked straight over
+  the install folder. release.ps1 produces it in that shape.
+-->
+<item>
+  <version>0.2.0.0</version>
+  <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-0.2.0.zip</url>
+  <changelog>https://github.com/Ayaan192/glasstweaksupdater/releases</changelog>
+  <mandatory mode="2">true</mandatory>
+</item>
