@@ -116,6 +116,25 @@ that mismatch is precisely how you publish an update no copy of the app will eve
 Pass `-SkipBuild` to re-cut a release from the exe and MSI already in `windows\dist`, which
 is what you want after fixing a typo in this script.
 
+### Publishing a build that was made somewhere else
+
+When the zip already exists — built on a machine that has the signing certificate, handed
+over by somebody else — drop it into `updates\` and write the manifest from it:
+
+```powershell
+./publish-uploaded.ps1 -Zip updates/GlassTweaks-0.4.0.zip
+```
+
+It does not build anything. It reads the version out of the exe **inside** the zip rather
+than trusting the file name, checks that the zip has the one thing an update needs —
+`GlassTweaks.exe` at its root, because it is unpacked over the install folder — and writes
+the SHA256 the app verifies the download against. Add `-DryRun` to see the manifest it would
+write and change nothing.
+
+The checksum is the part that has to be right: a manifest with a wrong one makes every copy
+of the app download the file and then throw it away, which looks exactly like nothing
+happening. That is why both scripts compute it rather than asking anybody to paste it.
+
 **3. Push it** — the script prints these lines with the right names filled in:
 
 ```powershell
