@@ -1,0 +1,9 @@
+# Keep the scripts and the manifest as they were written, so a release cut on one
+# machine and pushed from another does not show up as a whole-file change.
+* text=auto
+*.ps1 text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+
+# The release zips are binaries and must never be line-ending converted.
+*.zip binary
