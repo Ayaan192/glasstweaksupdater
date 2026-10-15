@@ -11,5 +11,5 @@
   <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-0.3.0.zip</url>
   <changelog>https://github.com/Ayaan192/glasstweaksupdater/releases</changelog>
   <mandatory mode="2">true</mandatory>
-  <checksum algorithm="SHA256">3fef61d5e8068583f896c51f36969ee24a855b6580404305e34ff0c2fcf9deb5</checksum>
+  <checksum algorithm="SHA256">c2de8edbc977049df466b4b6fdb4e8212060b750d945240199c3c706b71eb222</checksum>
 </item>
