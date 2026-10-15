@@ -1,12 +1,15 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!--
   Written by release.ps1 for Glass Tweaks 0.3.0. Do not edit by hand: run the script
-  again so the version, the zip name and this checksum stay in step.
+  again so the version, the file names and this checksum stay in step.
+
+  The installer for this release is beside the zip, unchanged for the app's own use:
+    https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaksSetup-0.3.0.msi
 -->
 <item>
   <version>0.3.0.0</version>
   <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-0.3.0.zip</url>
   <changelog>https://github.com/Ayaan192/glasstweaksupdater/releases</changelog>
   <mandatory mode="2">true</mandatory>
-  <checksum algorithm="SHA256">b1afc1af098dc74096d90d8c05b69cf6ff6f42f3a6a3ff3343b076d23befeac6</checksum>
+  <checksum algorithm="SHA256">3fef61d5e8068583f896c51f36969ee24a855b6580404305e34ff0c2fcf9deb5</checksum>
 </item>
