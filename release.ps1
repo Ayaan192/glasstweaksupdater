@@ -128,27 +128,41 @@ if ($built -ne $version4) {
 Write-Host "  exe   : $exe ($([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB, reports $built)"
 
 # ---- The MSI ---------------------------------------------------------------------------
-# Read out of the package's own Property table, which is what Add or remove programs shows
-# and what Windows Installer compares when a newer build replaces an older one. A MSI built
-# from a stale project would install a build the updater never published, so it is refused
+# Both questions below are asked of the package's own tables, which is what Add or remove
+# programs reads and what Windows Installer compares when a newer build replaces an older
+# one. An installer built around a different build than the exe being published is refused
 # here rather than discovered later on somebody's machine.
-function MsiVersion([string]$path) {
+function MsiValue([string]$path, [string]$sql, [int]$field, [switch]$AsInteger) {
     $installer = New-Object -ComObject WindowsInstaller.Installer
     $database = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($path, 0))
-    $view = $database.GetType().InvokeMember(
-        'OpenView', 'InvokeMethod', $null, $database,
-        @("SELECT `Value` FROM `Property` WHERE `Property`='ProductVersion'"))
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @($sql))
     $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
     $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-    if ($null -eq $record) { return '' }
-    return $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1))
+    if ($null -eq $record) { return $null }
+
+    $kind = if ($AsInteger) { 'IntegerData' } else { 'StringData' }
+    return $record.GetType().InvokeMember($kind, 'GetProperty', $null, $record, @($field))
 }
 
-$msiBuilt = MsiVersion (Resolve-Path $msi).Path
+$msiBuilt = MsiValue (Resolve-Path $msi).Path 'SELECT `Value` FROM `Property` WHERE `Property`=''ProductVersion''' 1
 if ($msiBuilt -ne $version3) {
     throw "The installer carries version $msiBuilt but this release is $version3. The installer project reads <Version> from $projectPath, so a different number means it was built against another copy of the app — rebuild it with package-installer.ps1."
 }
-Write-Host "  msi   : $msi ($([math]::Round((Get-Item $msi).Length / 1MB, 1)) MB, reports $msiBuilt)"
+
+# The installer carries a copy of the exe, and it records exactly how large that copy is, so
+# the copy can be checked against the exe being handed to the updater. A signature is
+# appended to a file, which means signing the exe after building the installer leaves the
+# installer holding the unsigned build — the same version number on two different binaries,
+# which is the failure this comparison exists to catch. Sizes rather than a hash because the
+# package stores the file compressed; equal length and equal version is what can be checked
+# without unpacking 150 MB out of a cabinet that expand.exe will not open.
+$payload = MsiValue (Resolve-Path $msi).Path 'SELECT `FileSize` FROM `File` WHERE `File`=''GlassTweaksExe''' 1 -AsInteger
+$exeSize = (Get-Item $exe).Length
+if ($payload -ne $exeSize) {
+    throw "The installer carries a $payload-byte exe but the release publishes a $exeSize-byte one, so the two builds differ. The usual cause is the installer being built before the exe was signed; run package-installer.ps1, which signs the exe first."
+}
+
+Write-Host "  msi   : $msi ($([math]::Round((Get-Item $msi).Length / 1MB, 1)) MB, reports $msiBuilt, carries the $payload-byte exe this release publishes)"
 
 # ---- The two files that go into updates\ ----------------------------------------------
 Step "Packaging GlassTweaks-$version3.zip"
