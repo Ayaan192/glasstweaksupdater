@@ -136,13 +136,9 @@ $msiUrl = "https://github.com/$Owner/$Repo/releases/download/$tag/$msiName"
 # machine still says the update file could not be reached, and it looks exactly like nothing
 # was published. Shipped builds read updates/appcast.xml, so that is where the manifest goes
 # in both flows — what changes between them is only where the zip it names is served from.
-$manifestUrl = if ($Direct) {
-    "https://raw.githubusercontent.com/$Owner/$Repo/main/updates/appcast.xml"
-}
-else {
-    "https://raw.githubusercontent.com/$Owner/$Repo/main/appcast.xml"
-}
-$manifestRepoPath = if ($Direct) { 'updates/appcast.xml' } else { 'appcast.xml' }
+# One path, one URL, one verification: -Verify then means the same thing after either flow.
+$manifestUrl = "https://raw.githubusercontent.com/$Owner/$Repo/main/updates/appcast.xml"
+$manifestRepoPath = 'updates/appcast.xml'
 
 # The two things a device actually fetches: the manifest on main, and the zip it names.
 # Checked with the same plain, unsigned-in https requests the app makes, because a manifest
@@ -150,6 +146,8 @@ $manifestRepoPath = if ($Direct) { 'updates/appcast.xml' } else { 'appcast.xml' 
 # every machine at once.
 function Assert-Published {
     $problems = New-Object System.Collections.Generic.List[string]
+    $publishedUrl = $null
+    $liveChecksum = $null
 
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -166,13 +164,20 @@ function Assert-Published {
         $response = Invoke-WebRequest -Uri "$manifestUrl`?release-check=$([DateTime]::UtcNow.Ticks)" -UseBasicParsing -TimeoutSec 30
         $published = ([xml]$response.Content).item
         Write-Host "    names $($published.version)" -ForegroundColor Green
+        $publishedUrl = $published.url
+        $liveChecksum = ($(if ($published.checksum -is [System.Xml.XmlElement]) { $published.checksum.InnerText } else { [string]$published.checksum })).ToLowerInvariant()
 
         if ($published.version -ne $version4) {
             $problems.Add("the published manifest names $($published.version) and this release is $version4; push $manifestRepoPath, or raise <Version> to $(($published.version.Split('.')[0..2]) -join '.')")
         }
 
+        # Not a failure: the live manifest naming the other flow's URL is a release cut the
+        # other way, and the zip it names is checked below whether or not this run would have
+        # written that URL. A manifest left over from the release *before* this one cannot get
+        # past the version check above, so a mismatch here is only ever the flow.
         if ($published.url -ne $url) {
-            $problems.Add("the published manifest points at $($published.url), expected $url")
+            Write-Host "    served as  : $($published.url)" -ForegroundColor Gray
+            Write-Host "    this run   : $url ($(if ($Direct) { '-Direct' } else { 'release asset' }))" -ForegroundColor Gray
         }
     }
     catch {
@@ -180,22 +185,35 @@ function Assert-Published {
         Write-Host "    could not be read" -ForegroundColor Yellow
     }
 
-    Write-Host "  zip      : $url"
+    # The file a device will fetch is the one named by the manifest that is live — not the one
+    # this run would write. A manifest left over from the release before names the build before,
+    # and checking our own URL against it would report a release that is not there.
+    $live = if ($publishedUrl) { $publishedUrl } else { $url }
+    Write-Host "  zip      : $live"
     try {
-        $head = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 30
+        $head = Invoke-WebRequest -Uri $live -Method Head -UseBasicParsing -TimeoutSec 30
         $publishedSize = [long]$head.Headers['Content-Length']
         Write-Host "    $([math]::Round($publishedSize / 1MB, 1)) MB" -ForegroundColor Green
 
         $staged = Join-Path $release $zipName
         if (Test-Path $staged) {
             $localSize = (Get-Item $staged).Length
+            $localHash = (Get-FileHash $staged -Algorithm SHA256).Hash.ToLowerInvariant()
+
             if ($publishedSize -ne $localSize) {
-                $problems.Add("the attached zip is $publishedSize bytes and $zipName here is $localSize, so they are not the same build")
+                $problems.Add("the published zip is $publishedSize bytes and $zipName here is $localSize, so they are not the same build")
+            }
+
+            # The checksum is what the app hashes the download against: a manifest that names
+            # this version and a different file is a release every copy of the app fetches and
+            # then quietly throws away, which looks exactly like nothing happening.
+            if ($liveChecksum -and $liveChecksum -ne $localHash) {
+                $problems.Add("the published manifest carries $liveChecksum and $zipName here hashes to $localHash, so every copy of the app would download this build and throw it away")
             }
         }
     }
     catch {
-        $problems.Add("the zip could not be fetched: $($_.Exception.Message). Attach $zipName to the release tagged $tag first: the app downloads this exact URL")
+        $problems.Add("the zip could not be fetched: $($_.Exception.Message). Publish the file $zipName is served from before the manifest that names it: a manifest that is live without it is a download that fails on every machine")
         Write-Host "    could not be fetched" -ForegroundColor Yellow
     }
 
@@ -342,6 +360,9 @@ else {
   release first — every copy of the app that reads this URL before the asset is there
   downloads nothing and waits for the next launch.
 
+  It lives at updates\appcast.xml, the path every released build checks for it. The zip is
+  free to be attached rather than committed; the manifest's path is not free to change.
+
   The installer for this release is attached beside the zip, unchanged for the app's own use:
     $msiUrl
 "@
@@ -366,9 +387,10 @@ $where
 
 # No BOM: this file is written by Windows PowerShell on one machine and served raw to
 # every copy of the app, and the declaration above already says what the encoding is.
-# -Direct writes it into updates\, beside the zip it names and at the path the app reads;
-# otherwise it sits at the root, under the release-asset flow.
-$manifestPath = Join-Path $(if ($Direct) { $updates } else { $root }) 'appcast.xml'
+# It goes to updates\appcast.xml in both flows: that is the URL the app reads, and the zip
+# it names is free to be committed beside it or attached to a release.
+$manifestPath = Join-Path $updates 'appcast.xml'
+New-Item -ItemType Directory -Force -Path $updates | Out-Null
 [System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding($false)))
 
 # The manifest is read with an XML parser, so it is checked with one here. A stray '--'

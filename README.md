@@ -213,11 +213,18 @@ before the zip is attached downloads nothing and waits for its next launch.
 ./release.ps1 -SkipBuild -Verify
 ```
 
-That reads the published manifest past GitHub's few-minute raw cache, checks that it names
-this version and the URL this release publishes, and reads the zip's own headers to check the
-file attached is the file staged here, byte for byte. It fails loudly, with what to fix. Any
-copy of Glass Tweaks older than 0.3.0 then picks the release up on its next launch; a copy
-already on 0.3.0 or newer does nothing at all.
+Add `-Direct` to that line to have it also confirm the zip URL this run would publish is the
+one the live manifest names. Without it, a manifest published the other way is reported as a
+note rather than a failure — the file it names is checked either way.
+
+That reads the published manifest past GitHub's few-minute raw cache — at
+`updates/appcast.xml`, the one path the app itself reads, whichever flow published the zip —
+checks that it names this version, fetches the zip it names, and compares that file's size
+**and its SHA256** with the zip staged here: the checksum is what the app verifies the
+download against, so a release carrying the wrong one is a build every copy of the app
+downloads and then throws away. It fails loudly, with what to fix. Any copy of Glass Tweaks
+older than the version it names then picks the release up on its next launch; a copy already
+on that version or newer does nothing at all.
 
 ## What the manifest means
 
