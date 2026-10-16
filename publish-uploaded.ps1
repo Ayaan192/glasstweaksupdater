@@ -8,7 +8,7 @@
 # one go. This script is for the other way, which is what you want when a build was made
 # somewhere else -- a machine that has the signing certificate, a build server, or a zip
 # somebody handed you. Point it at the zip, attach that zip to a release tagged v<version>,
-# then commit and push appcast.xml.
+# then commit and push updates/appcast.xml.
 #
 # It does the three things that must be right or the release is invisible: it reads the
 # version the app will compare against out of the zip's own exe rather than out of the file
@@ -117,6 +117,9 @@ $manifest = @"
 
   The zip is attached to the release tagged $tag in this repository, under the name above:
   an asset renamed on the way up is a URL that downloads nothing.
+
+  It sits at updates\appcast.xml, the path every released build checks; only the zip it
+  names is attached to a release rather than committed.
 -->
 <item>
   <version>$built</version>
@@ -130,7 +133,11 @@ $manifest = @"
 
 # No BOM: this file is written on one machine and served raw to every copy of the app, and
 # the declaration above already says what the encoding is.
-$manifestPath = Join-Path $root 'appcast.xml'
+#
+# updates/appcast.xml, not the root: that is the URL released builds were compiled with, and
+# a manifest published anywhere else is a manifest no installed copy ever reads.
+$manifestPath = Join-Path (Join-Path $root 'updates') 'appcast.xml'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $manifestPath) | Out-Null
 if ($DryRun) {
     Write-Host $manifest
     Write-Host "(dry run: $manifestPath was left as it is)"
@@ -155,7 +162,7 @@ Write-Host '  Publish it - in this order, the zip first:' -ForegroundColor Yello
 Write-Host "    1. Attach it to a release tagged $tag"
 Write-Host "         gh release create $tag `"$attach`" --title `"Glass Tweaks $(($built.Split('.')[0..2]) -join '.')`""
 Write-Host "         (or register it at github.com/$Owner/$Repo/releases/new, same tag, same file name)"
-Write-Host '    2. git add appcast.xml; git commit; git push'
+Write-Host '    2. git add updates/appcast.xml; git commit; git push'
 Write-Host ''
 Write-Host "  Every copy of the app older than $built picks it up on its next launch. A copy"
 Write-Host '  already on that version, or newer, does nothing at all.'

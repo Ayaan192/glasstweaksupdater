@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Written by release.ps1 for Glass Tweaks 0.4.0. Do not edit by hand: run the script
+  again so the version, the file names and this checksum stay in step.
+
+  The zip this names is committed in this repository, at updates\GlassTweaks-0.4.0.zip, and served raw
+  from main. Pushing this file and that one together is the whole release: the manifest and
+  the build it points at go live at the same moment, so no copy of the app can read a
+  version whose download is not there yet.
+
+  This manifest lives at updates\appcast.xml, which is the URL every released build checks
+  for it and the one path that flow has to keep: an installed copy cannot be told that the
+  manifest moved.
+-->
+<item>
+  <version>0.4.0.0</version>
+  <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-0.4.0.zip</url>
+  <changelog>https://github.com/Ayaan192/glasstweaksupdater/releases</changelog>
+  <mandatory mode="2">true</mandatory>
+  <checksum algorithm="SHA256">07d7d35c4c382144ef7bf079170b137e7c57ac3c6a28c7e6aa53779071791329</checksum>
+</item>

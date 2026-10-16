@@ -38,7 +38,20 @@ param(
     # Reuse the exe and the MSI already in windows\dist rather than building them again.
     # For re-cutting a release whose build has not changed, such as after a fix to this
     # script itself.
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+
+    # Serve the update from this repository instead of from a GitHub Release: the manifest
+    # points at the zip where it sits on main, and the zip is copied into updates\ ready to
+    # be committed beside the manifest.
+    #
+    # Publishing is then one push and nothing else — no release to create, no web page to
+    # open, no asset to attach — which is what makes a release land on every machine the
+    # next time somebody opens the app. The cost is that the zip lives in the repository's
+    # history for good: about 60 MB a release, which is fine for a handful of releases and
+    # not fine forever. The MSI is still built and still signed; only the zip an update
+    # unpacks has to be reachable by URL, so the installer is left in release\ for whoever
+    # wants it and can be attached to a release without being committed.
+    [switch]$Direct
 )
 
 $ErrorActionPreference = 'Stop'
@@ -102,10 +115,34 @@ $version3 = ($version4.Split('.')[0..2]) -join '.'
 # the app fetches are all the same release rather than three things kept in step by hand.
 $tag = "v$version3"
 $zipName = "GlassTweaks-$version3.zip"
+
+# Where the zip an update downloads is reached from. A release asset is the tidy answer and
+# the default; -Direct puts it on main and takes the release out of the loop entirely.
+$updates = Join-Path $root 'updates'
 $msiName = "GlassTweaksSetup-$version3.msi"
-$url = "https://github.com/$Owner/$Repo/releases/download/$tag/$zipName"
+$url = if ($Direct) {
+    # raw.githubusercontent serves this straight out of the repository, so the zip has to be
+    # committed — see the -Direct note in the parameter block.
+    "https://raw.githubusercontent.com/$Owner/$Repo/main/updates/$zipName"
+}
+else {
+    "https://github.com/$Owner/$Repo/releases/download/$tag/$zipName"
+}
 $msiUrl = "https://github.com/$Owner/$Repo/releases/download/$tag/$msiName"
-$manifestUrl = "https://raw.githubusercontent.com/$Owner/$Repo/main/appcast.xml"
+
+# Where the manifest is published, which is not a free choice and not where the zip lives.
+# Every copy of the app already installed was compiled with this URL and checks it on launch,
+# so a manifest written anywhere else is read by nobody: the release lands, the log on every
+# machine still says the update file could not be reached, and it looks exactly like nothing
+# was published. Shipped builds read updates/appcast.xml, so that is where the manifest goes
+# in both flows — what changes between them is only where the zip it names is served from.
+$manifestUrl = if ($Direct) {
+    "https://raw.githubusercontent.com/$Owner/$Repo/main/updates/appcast.xml"
+}
+else {
+    "https://raw.githubusercontent.com/$Owner/$Repo/main/appcast.xml"
+}
+$manifestRepoPath = if ($Direct) { 'updates/appcast.xml' } else { 'appcast.xml' }
 
 # The two things a device actually fetches: the manifest on main, and the zip it names.
 # Checked with the same plain, unsigned-in https requests the app makes, because a manifest
@@ -131,7 +168,7 @@ function Assert-Published {
         Write-Host "    names $($published.version)" -ForegroundColor Green
 
         if ($published.version -ne $version4) {
-            $problems.Add("the published manifest names $($published.version) and this release is $version4; push appcast.xml, or raise <Version> to $(($published.version.Split('.')[0..2]) -join '.')")
+            $problems.Add("the published manifest names $($published.version) and this release is $version4; push $manifestRepoPath, or raise <Version> to $(($published.version.Split('.')[0..2]) -join '.')")
         }
 
         if ($published.url -ne $url) {
@@ -264,6 +301,16 @@ Compress-Archive -Path $exe -DestinationPath $zipPath -Force
 $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $size = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
 
+# -Direct: the same zip, put where the manifest says it is. It is copied rather than moved
+# so `release\` still holds the whole build, which is what gets attached to a release later
+# if somebody wants the installer and the zip from one download.
+if ($Direct) {
+    Step "Staging $zipName in updates\"
+    New-Item -ItemType Directory -Force -Path $updates | Out-Null
+    Copy-Item $zipPath (Join-Path $updates $zipName) -Force
+    Write-Host "  updates : $(Join-Path $updates $zipName) ($size MB) - commit this file with the manifest"
+}
+
 # The installer ships too, under its version, for anybody who wants to put the app on a
 # machine properly rather than update a copy that is already there. The app itself never
 # fetches this; it is attached so the release holds the complete build rather than half of
@@ -276,12 +323,20 @@ $msiSize = [math]::Round((Get-Item $msiPath).Length / 1MB, 1)
 Step "Writing appcast.xml"
 $changelog = "https://github.com/$Owner/$Repo/releases"
 
-$manifest = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Written by release.ps1 for Glass Tweaks $version3. Do not edit by hand: run the script
-  again so the version, the file names and this checksum stay in step.
+$where = if ($Direct) {
+    @"
+  The zip this names is committed in this repository, at updates\$zipName, and served raw
+  from main. Pushing this file and that one together is the whole release: the manifest and
+  the build it points at go live at the same moment, so no copy of the app can read a
+  version whose download is not there yet.
 
+  This manifest lives at updates\appcast.xml, which is the URL every released build checks
+  for it and the one path that flow has to keep: an installed copy cannot be told that the
+  manifest moved.
+"@
+}
+else {
+    @"
   The zip is attached to the release tagged $tag in this repository. The manifest is served
   raw from main, so this file and the release it names have to be published together, the
   release first — every copy of the app that reads this URL before the asset is there
@@ -289,6 +344,16 @@ $manifest = @"
 
   The installer for this release is attached beside the zip, unchanged for the app's own use:
     $msiUrl
+"@
+}
+
+$manifest = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Written by release.ps1 for Glass Tweaks $version3. Do not edit by hand: run the script
+  again so the version, the file names and this checksum stay in step.
+
+$where
 -->
 <item>
   <version>$version4</version>
@@ -301,7 +366,9 @@ $manifest = @"
 
 # No BOM: this file is written by Windows PowerShell on one machine and served raw to
 # every copy of the app, and the declaration above already says what the encoding is.
-$manifestPath = Join-Path $root 'appcast.xml'
+# -Direct writes it into updates\, beside the zip it names and at the path the app reads;
+# otherwise it sits at the root, under the release-asset flow.
+$manifestPath = Join-Path $(if ($Direct) { $updates } else { $root }) 'appcast.xml'
 [System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding($false)))
 
 # The manifest is read with an XML parser, so it is checked with one here. A stray '--'
@@ -337,25 +404,44 @@ Write-Host "  zip      : $zipPath ($size MB)"
 Write-Host "  sha256   : $hash"
 Write-Host "  manifest : $manifestPath"
 Write-Host ""
-Write-Host "  Publish it - in this order, the attachments first:" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "  1. Attach both files to a release tagged $tag."
-Write-Host "     On the web:   github.com/$Owner/$Repo/releases/new"
-Write-Host "                   tag: $tag      title: Glass Tweaks $version3"
-Write-Host "                   drop in: $release\$zipName"
-Write-Host "                            $release\$msiName"
-Write-Host "     With the CLI: gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $version3`""
-Write-Host ""
-Write-Host "  2. Publish the manifest that names it:"
-Write-Host "       git add appcast.xml"
-Write-Host "       git commit -m `"Release Glass Tweaks $version3`""
-Write-Host "       git push"
-Write-Host ""
-Write-Host "  3. Check what is live, from this folder:"
-Write-Host "       ./release.ps1 -SkipBuild -Verify"
-Write-Host ""
-Write-Host "  The order matters. The manifest is served raw from main, so it goes live the moment"
-Write-Host "  the push lands, and every copy of the app that reads it before the zip is attached"
-Write-Host "  downloads nothing and waits for its next launch."
-Write-Host ""
+if ($Direct) {
+    Write-Host "  Publish it - one push, and every copy of the app picks it up on its next open:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "       git add updates/appcast.xml updates/$zipName"
+    Write-Host "       git commit -m `"Release Glass Tweaks $version3`""
+    Write-Host "       git push"
+    Write-Host ""
+    Write-Host "  Both files go in one commit on purpose: the manifest is served raw from main, so it"
+    Write-Host "  is live the moment the push lands, and it must never be live before the zip it names."
+    Write-Host ""
+    Write-Host "  The installer is staged but not committed - attach it to a release tagged $tag"
+    Write-Host "  if you want the complete build in one place:" -ForegroundColor Gray
+    Write-Host "       gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $version3`"" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Check what is live, from this folder:  ./release.ps1 -SkipBuild -Verify"
+    Write-Host ""
+}
+else {
+    Write-Host "  Publish it - in this order, the attachments first:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  1. Attach both files to a release tagged $tag."
+    Write-Host "     On the web:   github.com/$Owner/$Repo/releases/new"
+    Write-Host "                   tag: $tag      title: Glass Tweaks $version3"
+    Write-Host "                   drop in: $release\$zipName"
+    Write-Host "                            $release\$msiName"
+    Write-Host "     With the CLI: gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $version3`""
+    Write-Host ""
+    Write-Host "  2. Publish the manifest that names it:"
+    Write-Host "       git add $manifestRepoPath"
+    Write-Host "       git commit -m `"Release Glass Tweaks $version3`""
+    Write-Host "       git push"
+    Write-Host ""
+    Write-Host "  3. Check what is live, from this folder:"
+    Write-Host "       ./release.ps1 -SkipBuild -Verify"
+    Write-Host ""
+    Write-Host "  The order matters. The manifest is served raw from main, so it goes live the moment"
+    Write-Host "  the push lands, and every copy of the app that reads it before the zip is attached"
+    Write-Host "  downloads nothing and waits for its next launch."
+    Write-Host ""
+}
 Write-Host "  To watch it happen on a machine, run the app and look at %APPDATA%\GlassTweaks\update.log."

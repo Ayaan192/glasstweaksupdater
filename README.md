@@ -5,11 +5,14 @@ exists, and hands it the file. The app checks it on launch, and when the version
 higher than the one it is running it downloads the new build, closes, swaps its own files
 and opens again — with nothing to click.
 
-Everything published is one small file in the repository and one attachment:
+Everything published is one small file in the repository, and the build it names:
 
 ```
-appcast.xml                         the manifest: which version is newest, and where the file is
+updates/appcast.xml                 the manifest: which version is newest, and where the file is
+updates/GlassTweaks-<version>.zip   the build an update unpacks (with release.ps1 -Direct)
 ```
+
+or, when the zip is attached to a release instead of committed:
 
 ```
 GitHub Release  v0.3.0
@@ -17,12 +20,16 @@ GitHub Release  v0.3.0
   GlassTweaksSetup-0.3.0.msi        the installer for that same build, signed — for a fresh machine
 ```
 
-The split is the point. The manifest is tiny, has to be readable by every copy of the app
-with no credentials, and is the only thing that changes between releases, so it is committed
-and served raw from `main`. The zip is about 60 MB; committed, it would sit in every clone of
-this repository forever, and git would keep every past copy of it as well. Attached to a
-release it is served from the same public URL with none of that, and old ones can be deleted
-the day they stop mattering.
+The manifest is the part that cannot move. It is tiny, has to be readable by every copy of
+the app with no credentials, and it is the one file a release has to change — so it is
+committed and served raw from `main`. **Its path is a promise to every copy of the app
+already installed**: an installed build was compiled with one URL in it and checks nothing
+else, so a manifest published somewhere else is read by nobody, and the release quietly
+reaches no machine at all. That is why it stays at `updates/appcast.xml` — the path 0.3.0
+was built with — in every flow below. Only the zip's location may differ between releases:
+committed beside the manifest (about 60 MB in the repository's history per release, in
+exchange for publishing being one push), or attached to a release and served from its own
+download URL, which keeps the repository small and can be deleted the day it stops mattering.
 
 You never have to write either by hand. `release.ps1` builds the app and the installer from
 that one build, signs both, zips the app, hashes it, stages the two files to attach and
@@ -35,7 +42,7 @@ not have the app yet.
 The app reads one file, served raw from the `main` branch:
 
 ```
-https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/appcast.xml
+https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/appcast.xml
 ```
 
 `raw.githubusercontent.com` is deliberate. It needs no release API, no authentication and
@@ -52,7 +59,8 @@ newer version. Nothing else about the app is ever uploaded or shared.
 Nobody presses anything. In order:
 
 1. **The app opens.** The window appears first and the check runs behind it, so a slow or
-   unreachable GitHub cannot delay startup. A check happens at most once every six hours.
+   unreachable GitHub cannot delay startup. A check happens at most once every quarter hour,
+   and a launch that could not reach the manifest bypasses that and tries again.
 2. **The manifest is read** — one small XML file. Its `<version>` is compared with the
    version inside the running exe. If it is not higher, nothing else happens at all.
 3. **The zip is downloaded** behind the app's own update window: the Glass Tweaks card with
@@ -109,8 +117,13 @@ against, and the version the zip is named after. It is the only place to change.
 **2. Cut the release** — from *this* folder:
 
 ```powershell
-./release.ps1
+./release.ps1 -Direct
 ```
+
+`-Direct` is the flow that publishes with one push: the zip is copied into `updates\` next to
+the manifest, and both are committed together. Leave it off to publish the zip as a release
+asset instead, which keeps the repository small but needs the asset uploaded by hand (or with
+the GitHub CLI) before the manifest is pushed.
 
 One run produces every artifact of the release, from one build:
 
@@ -118,10 +131,14 @@ One run produces every artifact of the release, from one build:
 - the installer built around that same exe, signed, carrying the same version
 - `release\GlassTweaks-<version>.zip`, the signed exe on its own, which is what an update unpacks
 - `release\GlassTweaksSetup-<version>.msi`, the same installer
-- `appcast.xml`, at the root, naming the zip under the new version with its SHA256 and the
-  release URL that carries it
+- `updates\appcast.xml`, naming the zip under the new version with its SHA256 and the URL
+  that carries it, at the one path every released build checks
+- `updates\GlassTweaks-<version>.zip`, with `-Direct`, ready to be committed beside the
+  manifest
 
-`release\` is ignored by git: those two files are uploaded to the release, not committed.
+`release\` is ignored by git. The MSI always goes there — it is never fetched by the app and
+so never has to be committed — and the zip is copied out of it into `updates\` by `-Direct`,
+which is the flow this repository publishes with.
 
 It reads the version straight from the app project, so none of those can be labelled one
 version in the manifest and another in the binary. The installer project reads the same
@@ -151,32 +168,44 @@ Add `-DryRun` to see the manifest it would write and change nothing.
 
 The checksum is the part that has to be right: a manifest with a wrong one makes every copy
 of the app download the file and then throw it away, which looks exactly like nothing
-happening. That is why both scripts compute it rather than asking anybody to paste it.
+happening. That is why both scripts compute it rather than asking anybody to paste it. The
+manifest it writes goes to `updates/appcast.xml`, the same path `release.ps1` writes, whatever
+it is that serves the zip.
 
-**3. Attach the build to a release** — tagged `v0.3.0`, carrying the two files from `release\`:
+**3. (Optional) attach the installer to a release** — tagged `v0.3.0`, carrying the two files
+from `release\`. The app never fetches either of them: the MSI is for a fresh machine, and the
+zip is already published under `updates\`. Attaching them anyway is what leaves one release
+holding the complete build, and gives a link that can be handed to somebody.
 
 ```powershell
-# with the GitHub CLI, from this folder
+# with the GitHub CLI, if you have it
 gh release create v0.3.0 "release\GlassTweaks-0.3.0.zip" "release\GlassTweaksSetup-0.3.0.msi" --title "Glass Tweaks 0.3.0"
 
 # or on the web: github.com/Ayaan192/glasstweaksupdater/releases/new
 #   tag v0.3.0, then drop the same two files in
 ```
 
-The tag and the asset names are not free choices: the manifest's URL is built from the
-version, so an asset attached under another name is a URL that downloads nothing.
+With `-Direct` the tag and the asset names are only labels, because the manifest points at
+`main` rather than at the release. Without it they are not free choices at all: the manifest's
+URL is built from the version, so an asset attached under another name is a URL that
+downloads nothing.
 
 **4. Push the manifest** — the script prints these lines with the right names filled in:
 
 ```powershell
-git add appcast.xml
+git add updates/appcast.xml updates/GlassTweaks-0.3.0.zip
 git commit -m "Release Glass Tweaks 0.3.0"
 git push
 ```
 
-The order matters. The manifest is served straight from `main`, so it goes live the moment
-the push lands — and every copy of the app that reads it before the zip is attached downloads
-nothing and waits for its next launch. Attach the assets first, then push the manifest.
+The manifest and the zip it names go in **one** commit and one push, so they are live at the
+same moment and no copy of the app can read a version whose download is not there yet. That
+is the whole reason `-Direct` exists: the order between an upload and a push cannot be got
+wrong when there is nothing to upload.
+
+Without `-Direct` the order matters and the manifest goes second — it is served straight from
+`main`, so it goes live the moment the push lands, and every copy of the app that reads it
+before the zip is attached downloads nothing and waits for its next launch.
 
 **5. Check what is live** — not by assuming it, by fetching what a device fetches:
 
@@ -255,6 +284,6 @@ the check runs in the background, says nothing on screen, and writes one line to
 download that fails partway leaves the running copy untouched and says so once, in the app's
 own window, with a Close button.
 
-The check is throttled to once every six hours, so opening the app repeatedly does not hammer
-GitHub. The timestamp lives in `%APPDATA%\GlassTweaks\update.json`; deleting that file makes
-the next launch check immediately.
+The check is throttled to once every quarter hour, so opening the app repeatedly does not
+hammer GitHub. The timestamp lives in `%APPDATA%\GlassTweaks\update.json`; deleting that file
+makes the next launch check immediately.
