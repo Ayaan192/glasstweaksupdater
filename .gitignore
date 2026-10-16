@@ -1,10 +1,14 @@
-# The release zips are committed on purpose — the app downloads them from the raw URL,
-# so they have to be in the repository. Nothing else generated belongs here.
+# The only file this repository commits is appcast.xml, the manifest the app reads. The zip
+# it names and the installer beside it are attached to a GitHub Release and fetched by URL,
+# so nothing generated belongs in the tree.
 
-# A local test server's scratch space, and the manifests it serves.
+# A local test server's scratch space, and the logs the release scripts leave behind.
 /tmp/
 *.log
 
-# The build output the release script stages into before zipping. The zip is committed;
-# the folder it was made from is not.
+# The build output release.ps1 stages into before zipping.
 /build/
+
+# Where release.ps1 leaves the two files to attach to the release. They are uploaded, never
+# committed: a 60 MB zip in git is a 60 MB zip in every clone of this repository forever.
+/release/

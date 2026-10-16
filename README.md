@@ -5,31 +5,44 @@ exists, and hands it the file. The app checks it on launch, and when the version
 higher than the one it is running it downloads the new build, closes, swaps its own files
 and opens again — with nothing to click.
 
-Everything published lives in one folder:
+Everything published is one small file in the repository and one attachment:
 
 ```
-updates/
-  appcast.xml                       the manifest: which version is newest, and where the file is
-  GlassTweaks-0.3.0.zip             the release itself, one per version — what the app updates from
+appcast.xml                         the manifest: which version is newest, and where the file is
+```
+
+```
+GitHub Release  v0.3.0
+  GlassTweaks-0.3.0.zip             the release itself — what the app updates from
   GlassTweaksSetup-0.3.0.msi        the installer for that same build, signed — for a fresh machine
 ```
 
-You never have to touch `updates/` by hand. `release.ps1` builds the app and the installer
-from that one build, signs both, zips the app, hashes it and writes the manifest beside it.
-The app only ever downloads the zip; the MSI is published next to it so the repository holds
-the whole release, and so a link can be handed to somebody who does not have the app yet.
+The split is the point. The manifest is tiny, has to be readable by every copy of the app
+with no credentials, and is the only thing that changes between releases, so it is committed
+and served raw from `main`. The zip is about 60 MB; committed, it would sit in every clone of
+this repository forever, and git would keep every past copy of it as well. Attached to a
+release it is served from the same public URL with none of that, and old ones can be deleted
+the day they stop mattering.
+
+You never have to write either by hand. `release.ps1` builds the app and the installer from
+that one build, signs both, zips the app, hashes it, stages the two files to attach and
+writes the manifest that names them. The app only ever downloads the zip; the MSI is attached
+beside it so the release holds the whole build and a link can be handed to somebody who does
+not have the app yet.
 
 ## How the app uses this
 
 The app reads one file, served raw from the `main` branch:
 
 ```
-https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/appcast.xml
+https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/appcast.xml
 ```
 
 `raw.githubusercontent.com` is deliberate. It needs no release API, no authentication and
 no rate-limit token — it is the same URL a browser would fetch — so the check keeps working
-on any machine, signed in or not.
+on any machine, signed in or not. The zip it names is fetched from the release's own download
+URL (`https://github.com/Ayaan192/glasstweaksupdater/releases/download/v0.3.0/GlassTweaks-0.3.0.zip`),
+which needs no credentials either: a public repository's release assets are plain downloads.
 
 The whole exchange is two requests: the manifest, and then the zip if the manifest names a
 newer version. Nothing else about the app is ever uploaded or shared.
@@ -74,13 +87,15 @@ git remote -v
 ```
 
 Public matters. The app fetches the manifest and the zip as plain files with no credentials,
-so a private repository would answer every check with a 404. For the same reason nothing here
-is ever deleted: a copy of the app older than the published version fetches the current
-manifest and the file it names, so old releases can be removed when space matters.
+so a private repository would answer every check with a 404 — the app would simply never see
+a release. `main` is the branch the raw URL names, so the manifest has to be there, and the
+file it names has to still be attached to its release: a release whose asset is deleted while
+the manifest still points at it is a download that fails on every machine.
 
 ### Every release, from then on
 
-Three steps. There is no build server, no upload form and no deploy step.
+Five steps. There is no build server and no deploy step: two files are uploaded and one is
+committed.
 
 **1. Raise the version** — in the app project, `windows/app/GlassTweaks.csproj`:
 
@@ -101,9 +116,12 @@ One run produces every artifact of the release, from one build:
 
 - the app, self-contained and signed, in `windows\dist`
 - the installer built around that same exe, signed, carrying the same version
-- `updates\GlassTweaks-<version>.zip`, the signed exe on its own, which is what an update unpacks
-- `updates\GlassTweaksSetup-<version>.msi`, the same installer
-- `updates\appcast.xml`, naming the zip under the new version with its SHA256
+- `release\GlassTweaks-<version>.zip`, the signed exe on its own, which is what an update unpacks
+- `release\GlassTweaksSetup-<version>.msi`, the same installer
+- `appcast.xml`, at the root, naming the zip under the new version with its SHA256 and the
+  release URL that carries it
+
+`release\` is ignored by git: those two files are uploaded to the release, not committed.
 
 It reads the version straight from the app project, so none of those can be labelled one
 version in the manifest and another in the binary. The installer project reads the same
@@ -119,45 +137,65 @@ is what you want after fixing a typo in this script.
 ### Publishing a build that was made somewhere else
 
 When the zip already exists — built on a machine that has the signing certificate, handed
-over by somebody else — drop it into `updates\` and write the manifest from it:
+over by somebody else — point this at it and write the manifest from it:
 
 ```powershell
-./publish-uploaded.ps1 -Zip updates/GlassTweaks-0.4.0.zip
+./publish-uploaded.ps1 -Zip C:\build\GlassTweaks-0.4.0.zip
 ```
 
 It does not build anything. It reads the version out of the exe **inside** the zip rather
 than trusting the file name, checks that the zip has the one thing an update needs —
-`GlassTweaks.exe` at its root, because it is unpacked over the install folder — and writes
-the SHA256 the app verifies the download against. Add `-DryRun` to see the manifest it would
-write and change nothing.
+`GlassTweaks.exe` at its root, because it is unpacked over the install folder — stages a copy
+under the name the URL will use, and writes the SHA256 the app verifies the download against.
+Add `-DryRun` to see the manifest it would write and change nothing.
 
 The checksum is the part that has to be right: a manifest with a wrong one makes every copy
 of the app download the file and then throw it away, which looks exactly like nothing
 happening. That is why both scripts compute it rather than asking anybody to paste it.
 
-**3. Push it** — the script prints these lines with the right names filled in:
+**3. Attach the build to a release** — tagged `v0.3.0`, carrying the two files from `release\`:
 
 ```powershell
-git add updates/appcast.xml updates/GlassTweaks-0.3.0.zip updates/GlassTweaksSetup-0.3.0.msi
+# with the GitHub CLI, from this folder
+gh release create v0.3.0 "release\GlassTweaks-0.3.0.zip" "release\GlassTweaksSetup-0.3.0.msi" --title "Glass Tweaks 0.3.0"
+
+# or on the web: github.com/Ayaan192/glasstweaksupdater/releases/new
+#   tag v0.3.0, then drop the same two files in
+```
+
+The tag and the asset names are not free choices: the manifest's URL is built from the
+version, so an asset attached under another name is a URL that downloads nothing.
+
+**4. Push the manifest** — the script prints these lines with the right names filled in:
+
+```powershell
+git add appcast.xml
 git commit -m "Release Glass Tweaks 0.3.0"
 git push
 ```
 
-The release is live the moment the push lands, because the manifest is served straight from
-the `main` branch. Any copy of Glass Tweaks older than 0.3.0 picks it up on its next launch.
+The order matters. The manifest is served straight from `main`, so it goes live the moment
+the push lands — and every copy of the app that reads it before the zip is attached downloads
+nothing and waits for its next launch. Attach the assets first, then push the manifest.
 
-> The zip is around 60 MB and the MSI around 52 MB, and both are committed on purpose: the
-> app downloads the zip from the raw URL, so it has to be in the repository. Expect it to
-> grow by that much per release. If that ever becomes a problem, the zips of old versions
-> can be deleted — a copy of the app that is older than the published version only ever
-> fetches the newest one.
+**5. Check what is live** — not by assuming it, by fetching what a device fetches:
+
+```powershell
+./release.ps1 -SkipBuild -Verify
+```
+
+That reads the published manifest past GitHub's few-minute raw cache, checks that it names
+this version and the URL this release publishes, and reads the zip's own headers to check the
+file attached is the file staged here, byte for byte. It fails loudly, with what to fix. Any
+copy of Glass Tweaks older than 0.3.0 then picks the release up on its next launch; a copy
+already on 0.3.0 or newer does nothing at all.
 
 ## What the manifest means
 
 ```xml
 <item>
   <version>0.3.0.0</version>
-  <url>.../updates/GlassTweaks-0.3.0.zip</url>
+  <url>https://github.com/Ayaan192/glasstweaksupdater/releases/download/v0.3.0/GlassTweaks-0.3.0.zip</url>
   <mandatory mode="2">true</mandatory>
   <checksum algorithm="SHA256">…</checksum>
 </item>
@@ -165,7 +203,8 @@ the `main` branch. Any copy of Glass Tweaks older than 0.3.0 picks it up on its 
 
 - **version** is compared against the running app's assembly version. It must be strictly
   higher, in `X.X.X.X` form. This is the only thing that decides whether anything happens.
-- **url** is the zip the app downloads itself.
+- **url** is the release asset the app downloads itself — a plain https download from the
+  release tagged for this version.
 - **mandatory mode="2"** is what makes the update run without a dialog. The app also sets
   this in code, so a manifest that asked for buttons could not turn them back on.
 - **checksum** is verified before the zip is unpacked, so a half-downloaded or altered file
@@ -176,9 +215,9 @@ the `main` branch. Any copy of Glass Tweaks older than 0.3.0 picks it up on its 
 The zip contains **`GlassTweaks.exe` at its root**, because it is unpacked straight over the
 install folder. A self-contained single-file build is exactly this: one exe, no runtime to
 install, nothing beside it. `release.ps1` produces it in that shape, and it is the same file
-the MSI carries — so a machine that installed from `GlassTweaksSetup-0.3.0.msi` and a machine
-that updated from `GlassTweaks-0.3.0.zip` are running the same binary, not two builds that
-happen to share a version number.
+the MSI attached to the same release carries — so a machine that installed from
+`GlassTweaksSetup-0.3.0.msi` and a machine that updated from `GlassTweaks-0.3.0.zip` are
+running the same binary, not two builds that happen to share a version number.
 
 An update never touches `%APPDATA%\GlassTweaks`, which is where the app's own records live —
 the originals it captured for every setting it changed, the game library, the boost log. The
@@ -204,7 +243,7 @@ helper: started the updated build
 To try a release without publishing it, point a launch at a local manifest:
 
 ```powershell
-$env:GLASSTWEAKS_APPCAST = 'http://127.0.0.1:8000/updates/appcast.xml'
+$env:GLASSTWEAKS_APPCAST = 'http://127.0.0.1:8000/appcast.xml'
 & "$env:LOCALAPPDATA\Programs\GlassTweaks\GlassTweaks.exe"
 ```
 
