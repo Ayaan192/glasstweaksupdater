@@ -85,8 +85,10 @@ function Step($text) { Write-Host "`n== $text" -ForegroundColor Cyan }
 # rather than the other way round, and none of them can drift apart.
 function Normalize([string]$value) {
     $p = $value.Split('.')
-    if ($p.Count -lt 2 -or $p.Count -gt 4 -or ($p | Where-Object { $_ -notmatch '^\d+$' })) {
-        throw "'$value' is not a version. Use 0.3.0 or 0.3.0.0."
+    # One number is a version: a release named 8 is built, installed and compared as
+    # 8.0.0.0, and that is what this pads it to.
+    if ($p.Count -lt 1 -or $p.Count -gt 4 -or ($p | Where-Object { $_ -notmatch '^\d+$' })) {
+        throw "'$value' is not a version. Use 8, 0.3.0 or 0.3.0.0."
     }
 
     return (($p + @('0', '0', '0'))[0..3]) -join '.'
@@ -110,16 +112,23 @@ if (-not $Version) {
 $version4 = Normalize $Version
 $version3 = ($version4.Split('.')[0..2]) -join '.'
 
+# What the release is called on the page, in the tag and in the file names. A whole-number
+# release is written as one number — 8 rather than 8.0.0 — while the exe, the installer and
+# the manifest keep the four-part value they are compared by. The two are the same release;
+# only the way it is written down differs.
+$parts = $version4.Split('.')
+$label = if ($parts[1] -eq '0' -and $parts[2] -eq '0') { $parts[0] } else { $version3 }
+
 # The tag the assets are published under, and the URLs that follow from the version. Written
 # into the manifest, so the release's name, the name of the file attached to it and the URL
 # the app fetches are all the same release rather than three things kept in step by hand.
-$tag = "v$version3"
-$zipName = "GlassTweaks-$version3.zip"
+$tag = "v$label"
+$zipName = "GlassTweaks-$label.zip"
 
 # Where the zip an update downloads is reached from. A release asset is the tidy answer and
 # the default; -Direct puts it on main and takes the release out of the loop entirely.
 $updates = Join-Path $root 'updates'
-$msiName = "GlassTweaksSetup-$version3.msi"
+$msiName = "GlassTweaksSetup-$label.msi"
 $url = if ($Direct) {
     # raw.githubusercontent serves this straight out of the repository, so the zip has to be
     # committed — see the -Direct note in the parameter block.
@@ -240,13 +249,13 @@ if ($projectVersion) {
 # builds that happen to carry the same number. The MSI takes its version from the app
 # project, so it is built under this release's version without being told.
 if ($Verify) {
-    Step "Verifying the published release for $version3"
+    Step "Verifying the published release for $label"
     Assert-Published
     return
 }
 
 if (-not $SkipBuild) {
-    Step "Publishing Glass Tweaks $version3 from $App"
+    Step "Publishing Glass Tweaks $label from $App"
 
     & (Join-Path $Installer 'package-installer.ps1')
     if ($LASTEXITCODE -ne 0) { throw "packaging the app and the installer failed with exit code $LASTEXITCODE." }
@@ -371,7 +380,7 @@ else {
 $manifest = @"
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Written by release.ps1 for Glass Tweaks $version3. Do not edit by hand: run the script
+  Written by release.ps1 for Glass Tweaks $label. Do not edit by hand: run the script
   again so the version, the file names and this checksum stay in step.
 
 $where
@@ -430,7 +439,7 @@ if ($Direct) {
     Write-Host "  Publish it - one push, and every copy of the app picks it up on its next open:" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "       git add updates/appcast.xml updates/$zipName"
-    Write-Host "       git commit -m `"Release Glass Tweaks $version3`""
+    Write-Host "       git commit -m `"Release Glass Tweaks $label`""
     Write-Host "       git push"
     Write-Host ""
     Write-Host "  Both files go in one commit on purpose: the manifest is served raw from main, so it"
@@ -438,7 +447,7 @@ if ($Direct) {
     Write-Host ""
     Write-Host "  The installer is staged but not committed - attach it to a release tagged $tag"
     Write-Host "  if you want the complete build in one place:" -ForegroundColor Gray
-    Write-Host "       gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $version3`"" -ForegroundColor Gray
+    Write-Host "       gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $label`"" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  Check what is live, from this folder:  ./release.ps1 -SkipBuild -Verify"
     Write-Host ""
@@ -448,14 +457,14 @@ else {
     Write-Host ""
     Write-Host "  1. Attach both files to a release tagged $tag."
     Write-Host "     On the web:   github.com/$Owner/$Repo/releases/new"
-    Write-Host "                   tag: $tag      title: Glass Tweaks $version3"
+    Write-Host "                   tag: $tag      title: Glass Tweaks $label"
     Write-Host "                   drop in: $release\$zipName"
     Write-Host "                            $release\$msiName"
-    Write-Host "     With the CLI: gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $version3`""
+    Write-Host "     With the CLI: gh release create $tag `"$zipPath`" `"$msiPath`" --title `"Glass Tweaks $label`""
     Write-Host ""
     Write-Host "  2. Publish the manifest that names it:"
     Write-Host "       git add $manifestRepoPath"
-    Write-Host "       git commit -m `"Release Glass Tweaks $version3`""
+    Write-Host "       git commit -m `"Release Glass Tweaks $label`""
     Write-Host "       git push"
     Write-Host ""
     Write-Host "  3. Check what is live, from this folder:"
