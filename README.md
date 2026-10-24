@@ -148,6 +148,12 @@ release rather than publishing an installer for a build the app never had. If yo
 `-Version` it must match the project, and the script refuses the release if it does not —
 that mismatch is precisely how you publish an update no copy of the app will ever notice.
 
+The way a release is written down drops trailing zeroes: `<Version>10.0.0</Version>` is
+released as **v10**, `10.1.0` as **v10.1**, and `10.1.2` keeps all three parts, so the tag,
+the file names and the manifest read the way the release is talked about while every copy of
+the app still compares the four-part value. A minor release after 10 is therefore one line —
+raise `<Version>` to `10.1.0` and run the script again.
+
 Pass `-SkipBuild` to re-cut a release from the exe and MSI already in `windows\dist`, which
 is what you want after fixing a typo in this script.
 
