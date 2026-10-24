@@ -112,12 +112,20 @@ if (-not $Version) {
 $version4 = Normalize $Version
 $version3 = ($version4.Split('.')[0..2]) -join '.'
 
-# What the release is called on the page, in the tag and in the file names. A whole-number
-# release is written as one number — 8 rather than 8.0.0 — while the exe, the installer and
-# the manifest keep the four-part value they are compared by. The two are the same release;
-# only the way it is written down differs.
+# What the release is called on the page, in the tag and in the file names. Trailing
+# zeroes are dropped, so the labels read the way releases are talked about: 10.0.0 is 10,
+# 10.1.0 is 10.1, and 10.1.2 keeps all three parts. The exe, the installer and the manifest
+# keep the four-part value they are compared by. The two are the same release; only the way
+# it is written down differs, so a minor release after 10 is simply v10.1 and every copy
+# already out there still compares it as 10.1.0.0.
 $parts = $version4.Split('.')
-$label = if ($parts[1] -eq '0' -and $parts[2] -eq '0') { $parts[0] } else { $version3 }
+$label = if ($parts[2] -ne '0') {
+    $version3
+} elseif ($parts[1] -ne '0') {
+    "$($parts[0]).$($parts[1])"
+} else {
+    $parts[0]
+}
 
 # The tag the assets are published under, and the URLs that follow from the version. Written
 # into the manifest, so the release's name, the name of the file attached to it and the URL
