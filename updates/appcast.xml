@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Written by release.ps1 for Glass Tweaks 10.1. Do not edit by hand: run the script
+  Written by release.ps1 for Glass Tweaks 10.1.1. Do not edit by hand: run the script
   again so the version, the file names and this checksum stay in step.
 
-  The zip this names is committed in this repository, at updates\GlassTweaks-10.1.zip, and served raw
+  The zip this names is committed in this repository, at updates\GlassTweaks-10.1.1.zip, and served raw
   from main. Pushing this file and that one together is the whole release: the manifest and
   the build it points at go live at the same moment, so no copy of the app can read a
   version whose download is not there yet.
@@ -13,9 +13,9 @@
   manifest moved.
 -->
 <item>
-  <version>10.1.0.0</version>
-  <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-10.1.zip</url>
+  <version>10.1.1.0</version>
+  <url>https://raw.githubusercontent.com/Ayaan192/glasstweaksupdater/main/updates/GlassTweaks-10.1.1.zip</url>
   <changelog>https://github.com/Ayaan192/glasstweaksupdater/releases</changelog>
   <mandatory mode="2">true</mandatory>
-  <checksum algorithm="SHA256">c17fd8d086ec4fca9fbe3c788286c4949098b911b6653aa31b474cda098aaad6</checksum>
+  <checksum algorithm="SHA256">f4a1abeefd100516e0f98b185f2387dd3f59808126f9c4447f7f507b68cae8d5</checksum>
 </item>
